@@ -30,6 +30,9 @@
 
 #include "MQ131.h"
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 /**
  * Constructor, nothing special to do
  */
@@ -46,18 +49,28 @@ MQ131Class::~MQ131Class() {
 /**
  * Init core variables
  */
- void MQ131Class::begin(uint8_t _pinPower, uint8_t _pinSensor, MQ131Model _model, uint32_t _RL, Stream* _debugStream) { 
+void MQ131Class::begin(uint8_t _pinPower, ADS1115_MUX _pinSensor, MQ131Model _model, uint32_t _RL, uint8_t _MQ131_DEFAULT_STABLE_CYCLE,  ADS1115_WE* _adc, Stream* _debugStream, float _maxVoltage){
   // Define if debug is requested
   enableDebug = _debugStream != NULL;
   debugStream = _debugStream;
-  
- 	// Setup the model
- 	model = _model;
 
- 	// Store the circuit info (pin and load resistance)
+  adc = _adc;
+  MQ131_DEFAULT_STABLE_CYCLE = _MQ131_DEFAULT_STABLE_CYCLE;
+
+// Setup the model
+  model = _model;
+
+// Store the circuit info (pin and load resistance)
  	pinPower = _pinPower;
  	pinSensor = _pinSensor;
  	valueRL = _RL;
+
+  adc->setMeasureMode(ADS1115_CONTINUOUS);
+  if (_maxVoltage <= 4.096) {
+    adc->setVoltageRange_mV(ADS1115_RANGE_4096);
+  } else {
+    adc->setVoltageRange_mV(ADS1115_RANGE_6144);
+  }
 
   // Setup default calibration value
   switch(model) {
@@ -78,7 +91,6 @@ MQ131Class::~MQ131Class() {
 
  	// Setup pin mode
  	pinMode(pinPower, OUTPUT);
- 	pinMode(pinSensor, INPUT);
 
   // Switch off the heater as default status
   digitalWrite(pinPower, LOW);
@@ -92,7 +104,7 @@ MQ131Class::~MQ131Class() {
  void MQ131Class::sample() {
  	startHeater();
  	while(!isTimeToRead()) {
- 		delay(1000);
+ 		vTaskDelay(pdMS_TO_TICKS(1000));
  	}
  	lastValueRs = readRs();
  	stopHeater();
@@ -149,12 +161,13 @@ MQ131Class::~MQ131Class() {
  */
  float MQ131Class::readRs() {
  	// Read the value
- 	uint16_t valueSensor = analogRead(pinSensor);
+  adc->setCompareChannels(pinSensor);
  	// Compute the voltage on load resistance (for 5V Arduino)
-  float vRL = ((float)valueSensor) / 1024.0 * 5.0;
- 	// Compute the resistance of the sensor (for 5V Arduino)
+  float vRL = adc->getResult_V();
+  Serial.print("MQ131 vRL = "); Serial.println(vRL);
+  // Compute the resistance of the sensor
   if(!vRL) return 0.0f; //division by zero prevention
- 	float rS = (5.0 / vRL - 1.0) * valueRL;
+    float rS = (maxVoltage / vRL - 1.0) * valueRL;
  	return rS;
  }
 
@@ -308,7 +321,7 @@ void MQ131Class::calibrate() {
 
   uint8_t timeToReadConsistency = MQ131_DEFAULT_STABLE_CYCLE;
 
-  while(countReadInRow <= timeToReadConsistency) {
+  while(countReadInRow <= timeToReadConsistency && count < 120) {
     float value = readRs();
 
     if(enableDebug) {
@@ -325,7 +338,7 @@ void MQ131Class::calibrate() {
       countReadInRow++;
     }
     count++;
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
   if(enableDebug) {
@@ -339,7 +352,8 @@ void MQ131Class::calibrate() {
   stopHeater();
 
   // We have our R0 and our time to read
-  setR0(lastRsValue);
+  if (lastRsValue > 0.0)
+    setR0(lastRsValue);
   setTimeToRead(count);
 }
 
@@ -347,7 +361,9 @@ void MQ131Class::calibrate() {
   * Store R0 value (come from calibration or set by user)
   */
   void MQ131Class::setR0(float _valueR0) {
-  	valueR0 = _valueR0;
+    if (_valueR0 > 0.0) {
+      valueR0 = _valueR0;
+    }
   }
 
  /**
