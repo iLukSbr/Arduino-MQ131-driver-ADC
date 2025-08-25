@@ -164,7 +164,8 @@ void MQ131Class::begin(uint8_t _pinPower, ADS1115_MUX _pinSensor, MQ131Model _mo
   adc->setCompareChannels(pinSensor);
  	// Compute the voltage on load resistance (for 5V Arduino)
   float vRL = adc->getResult_V();
-  Serial.print("MQ131 vRL = "); Serial.println(vRL);
+  // Serial.print(F("MQ131 vRL = "));
+  // Serial.println(vRL);
   // Compute the resistance of the sensor
   if(!vRL) return 0.0f; //division by zero prevention
     float rS = (maxVoltage / vRL - 1.0) * valueRL;
