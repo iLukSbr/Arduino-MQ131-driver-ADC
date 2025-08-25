@@ -322,7 +322,7 @@ void MQ131Class::calibrate() {
 
   uint8_t timeToReadConsistency = MQ131_DEFAULT_STABLE_CYCLE;
 
-  while(countReadInRow <= timeToReadConsistency && count < 120) {
+  while(countReadInRow <= timeToReadConsistency && count < MQ131_DEFAULT_LO_CONCENTRATION_TIME2READ) {
     float value = readRs();
 
     if(enableDebug) {
